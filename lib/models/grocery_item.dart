@@ -36,8 +36,9 @@ class GroceryItem {
   bool get hasExactPrice => isCustomPrice || hargaSatuanMin == hargaSatuanMax;
 
   factory GroceryItem.fromJson(Map<String, dynamic> json) {
-    final int minPrice = _parseInt(json['harga_satuan_min'], 0);
-    final int maxPrice = _parseInt(json['harga_satuan_max'], minPrice);
+    final int singlePrice = _parseInt(json['harga_satuan'], 0);
+    final int minPrice = _parseInt(json['harga_satuan_min'], singlePrice);
+    final int maxPrice = _parseInt(json['harga_satuan_max'], minPrice > 0 ? minPrice : singlePrice);
     final int origMin = _parseInt(json['ai_harga_min_original'], minPrice);
     final int origMax = _parseInt(json['ai_harga_max_original'], maxPrice);
     final String rawKey = (json['normalized_key'] ??

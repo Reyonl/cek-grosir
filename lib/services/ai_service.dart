@@ -1,6 +1,8 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import '../models/grocery_item.dart';
+import '../models/receipt_scan_result.dart';
 import 'local_storage_service.dart';
 
 class AiServiceException implements Exception {
@@ -372,4 +374,225 @@ Aturan Penting:
 
     return items;
   }
+
+  // ==================== MULTIMODAL OCR BON BELANJA ====================
+
+  static const String receiptSystemInstruction = '''
+Kamu adalah asisten OCR cerdas khusus membaca nota / bon belanjaan grosir warung dan toko sembako di Indonesia (gaya Grosir Batak / agen sembako).
+Tugasmu adalah membaca foto bon belanjaan (bisa nota tulisan tangan, nota print kasir, atau nota carbon/kwitansi grosir), lalu mengekstrak setiap item barang yang dibeli beserta harga nyata/riil yang dibayar.
+
+Aturan Penting:
+1. Baca setiap baris barang, kuantitas (qty), satuan grosir (Renteng, Dus, Pouch, Pak, Kg, Botol, Pcs), dan harga satuan yang dibayar.
+2. Jika di nota tertera harga subtotal dan qty > 1, bagi subtotal dengan qty untuk mendapatkan harga satuan yang tepat.
+3. Standarkan singkatan warung menjadi nama produk yang jelas (misal: "GD Moca 2R" -> "Good Day Mocacinno", "Lemin bsr" -> "Le Minerale Besar 1500ml", "K api mini" -> "Kapal Api Mini").
+4. Buat "normalized_key" produk yang konsisten huruf kecil dan garis bawah untuk pencocokan memori lokal Hive (contoh: "good_day_mocacinno_renteng", "minyak_2l", "royco_renteng").
+5. Jika ada nama toko atau tanggal nota, ekstrak pada level atas.
+6. Kembalikan HANYA format JSON valid sesuai skema:
+{
+  "nama_toko": "string (nama toko atau kosongkan jika tidak ada)",
+  "tanggal_bon": "string (tanggal belanja jika terbaca)",
+  "total_bon": 150000,
+  "items": [
+    {
+      "input_asli": "string (teks persis yang tertera di bon)",
+      "normalized_key": "string (kunci produk lowercase)",
+      "nama_produk_standar": "string",
+      "kategori": "Minuman Sachet | Minuman Dus & Botol | Sembako & Bumbu | Lainnya",
+      "qty": 2,
+      "satuan": "Renteng | Dus | Botol | Pouch | Kg | Pak | Pcs",
+      "harga_satuan": 15000,
+      "catatan_grosir": "string (keterangan)"
+    }
+  ]
 }
+''';
+
+  /// Membaca foto bon/struk belanja fisik menggunakan Gemini Vision REST API
+  static Future<ReceiptScanResult> scanReceiptImage({
+    required Uint8List imageBytes,
+    String mimeType = 'image/jpeg',
+  }) async {
+    final apiKey = LocalStorageService.getApiKey();
+    final modelName = LocalStorageService.getModelName();
+
+    if (apiKey.isEmpty) {
+      throw const AiServiceException(
+        'API Key Gemini belum diatur. Silakan klik ikon kunci di pojok kanan atas untuk memasukkan API Key terlebih dahulu.',
+      );
+    }
+
+    final base64Image = base64Encode(imageBytes);
+
+    final uri = Uri.parse(
+      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$apiKey',
+    );
+
+    final Map<String, dynamic> requestBody = {
+      'systemInstruction': {
+        'parts': [
+          {'text': receiptSystemInstruction}
+        ]
+      },
+      'contents': [
+        {
+          'role': 'user',
+          'parts': [
+            {
+              'inlineData': {
+                'mimeType': mimeType,
+                'data': base64Image,
+              }
+            },
+            {
+              'text':
+                  'Ekstrak seluruh daftar barang, jumlah (qty), satuan grosir, dan harga riil per satuan dari foto bon belanja ini ke format JSON terstruktur.'
+            }
+          ]
+        }
+      ],
+      'generationConfig': {
+        'responseMimeType': 'application/json',
+        'temperature': 0.1,
+      },
+    };
+
+    http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode(requestBody),
+          )
+          .timeout(const Duration(seconds: 40));
+    } catch (e) {
+      throw AiServiceException(
+        'Gagal mengirim gambar bon ke Gemini. Periksa koneksi internet Anda. Detail: $e',
+      );
+    }
+
+    if (response.statusCode != 200) {
+      String errorDetail = 'HTTP ${response.statusCode}';
+      try {
+        final errJson = jsonDecode(response.body);
+        if (errJson is Map && errJson['error'] is Map) {
+          errorDetail =
+              errJson['error']['message']?.toString() ?? errorDetail;
+        }
+      } catch (_) {}
+      throw AiServiceException('Gagal memproses OCR bon ($errorDetail)');
+    }
+
+    Map<String, dynamic> decodedResponse;
+    try {
+      decodedResponse = jsonDecode(response.body) as Map<String, dynamic>;
+    } catch (e) {
+      throw const AiServiceException('Respons dari server bukan JSON valid.');
+    }
+
+    final candidates = decodedResponse['candidates'];
+    if (candidates is! List || candidates.isEmpty) {
+      throw const AiServiceException(
+        'AI tidak dapat mendeteksi tulisan pada bon. Pastikan foto cukup terang dan fokus.',
+      );
+    }
+
+    final content = candidates.first['content'];
+    final parts = content is Map ? content['parts'] : null;
+    if (parts is! List || parts.isEmpty) {
+      throw const AiServiceException('Hasil baca bon dari AI kosong.');
+    }
+
+    String rawJsonText = (parts.first['text'] ?? '').toString().trim();
+    if (rawJsonText.startsWith('```')) {
+      rawJsonText = rawJsonText
+          .replaceFirst(RegExp(r'^```(?:json)?\s*'), '')
+          .replaceFirst(RegExp(r'\s*```$'), '')
+          .trim();
+    }
+
+    dynamic parsedPayload;
+    try {
+      parsedPayload = jsonDecode(rawJsonText);
+    } catch (e) {
+      throw const AiServiceException(
+        'Gagal mengurai format JSON dari hasil scan bon AI.',
+      );
+    }
+
+    if (parsedPayload is! Map<String, dynamic>) {
+      throw const AiServiceException(
+        'Format JSON hasil OCR bon tidak sesuai struktur.',
+      );
+    }
+
+    return ReceiptScanResult.fromJson(parsedPayload);
+  }
+
+  /// Contoh hasil scan bon grosir untuk pengetesan offline
+  static ReceiptScanResult getSampleReceiptResult() {
+    return ReceiptScanResult(
+      namaToko: 'Agen Sembako & Grosir Berkah Jaya',
+      tanggalBon: '16/10/2026',
+      totalBon: 172000,
+      items: [
+        GroceryItem.fromJson({
+          'input_asli': 'Good Day Mocacinno 2R',
+          'normalized_key': 'good_day_mocacinno_renteng',
+          'nama_produk_standar': 'Good Day Merah (Mocacinno)',
+          'kategori': 'Minuman Sachet',
+          'qty': 2,
+          'satuan': 'Renteng',
+          'harga_satuan': 15000,
+          'catatan_grosir': 'Harga riil toko langganan',
+          'is_custom_price': true,
+        }),
+        GroceryItem.fromJson({
+          'input_asli': 'Kopi ABC Susu 2R',
+          'normalized_key': 'abc_susu_renteng',
+          'nama_produk_standar': 'Kopi ABC Susu',
+          'kategori': 'Minuman Sachet',
+          'qty': 2,
+          'satuan': 'Renteng',
+          'harga_satuan': 17000,
+          'catatan_grosir': 'Harga riil toko langganan',
+          'is_custom_price': true,
+        }),
+        GroceryItem.fromJson({
+          'input_asli': 'Minyak Goreng 2L 2 Pouch',
+          'normalized_key': 'minyak_2l',
+          'nama_produk_standar': 'Minyak Goreng 2L',
+          'kategori': 'Sembako & Bumbu',
+          'qty': 2,
+          'satuan': 'Pouch (2L)',
+          'harga_satuan': 35000,
+          'catatan_grosir': 'Harga riil toko langganan',
+          'is_custom_price': true,
+        }),
+        GroceryItem.fromJson({
+          'input_asli': 'Royco Sapi 4R',
+          'normalized_key': 'royco_renteng',
+          'nama_produk_standar': 'Royco Bumbu Kaldu',
+          'kategori': 'Sembako & Bumbu',
+          'qty': 4,
+          'satuan': 'Renteng',
+          'harga_satuan': 5000,
+          'catatan_grosir': 'Harga riil toko langganan',
+          'is_custom_price': true,
+        }),
+        GroceryItem.fromJson({
+          'input_asli': 'Panther Cup 1Ds',
+          'normalized_key': 'panther_dus',
+          'nama_produk_standar': 'Panther Cup Gelas',
+          'kategori': 'Minuman Dus & Botol',
+          'qty': 1,
+          'satuan': 'Dus',
+          'harga_satuan': 20000,
+          'catatan_grosir': 'Harga riil toko langganan',
+          'is_custom_price': true,
+        }),
+      ],
+    );
+  }
+}
+
