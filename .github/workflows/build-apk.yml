@@ -5,8 +5,16 @@ on:
     branches:
       - master
       - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'refactor/**'
+      - 'ui/**'
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - master
+      - main
   workflow_dispatch:
 
 permissions:
