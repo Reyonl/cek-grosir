@@ -11,6 +11,7 @@ import '../widgets/edit_price_dialog.dart';
 import '../widgets/item_card.dart';
 import '../widgets/receipt_scan_dialog.dart';
 import '../widgets/price_memory_manager_sheet.dart';
+import '../widgets/import_json_dialog.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -507,6 +508,36 @@ panther 1Ds''';
     );
   }
 
+  Future<void> _openImportJsonDialog() async {
+    final result = await showDialog<ImportJsonResult>(
+      context: context,
+      builder: (_) => const ImportJsonDialog(),
+    );
+
+    if (result == null || !mounted) return;
+
+    if (result.addToCart && result.items.isNotEmpty) {
+      setState(() {
+        _cartItems = [..._cartItems, ...result.items];
+        _isInputExpanded = false;
+      });
+      await _persistCart();
+    } else if (result.saveToMemory) {
+      _loadCartFromHive();
+    }
+
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF065F46),
+        behavior: SnackBarBehavior.floating,
+        content: Text(
+          'Berhasil mengimpor ${result.items.length} produk dari JSON!',
+        ),
+      ),
+    );
+  }
+
   Future<void> _handleEditPrice(GroceryItem item) async {
     final result = await showDialog<EditPriceResult>(
       context: context,
@@ -730,6 +761,11 @@ panther 1Ds''';
             onPressed: _pickAndScanReceipt,
             icon: const Icon(Icons.document_scanner_outlined),
           ),
+          IconButton(
+            tooltip: 'Impor Data JSON (Gemini Chat)',
+            onPressed: _openImportJsonDialog,
+            icon: const Icon(Icons.data_object_rounded),
+          ),
           ValueListenableBuilder<Box>(
             valueListenable: LocalStorageService.priceBoxListenable,
             builder: (context, box, _) {
@@ -893,66 +929,88 @@ panther 1Ds''';
                     ),
                   ),
                   const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      OutlinedButton.icon(
-                        onPressed: _isLoadingAi ? null : _fillSampleText,
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: const Color(0xFF047857),
-                          side: const BorderSide(color: Color(0xFF6EE7B7)),
-                        ),
-                        icon: const Icon(Icons.playlist_add_rounded, size: 17),
-                        label: const Text(
-                          'Isi Contoh',
-                          style: TextStyle(fontSize: 12.5),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      OutlinedButton.icon(
-                        onPressed: _isLoadingAi ? null : _pickAndScanReceipt,
-                        style: OutlinedButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: const Color(0xFFD97706),
-                          side: const BorderSide(color: Color(0xFFFCD34D)),
-                        ),
-                        icon: const Icon(Icons.document_scanner_rounded, size: 17),
-                        label: const Text(
-                          'Scan Bon',
-                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      TextButton.icon(
-                        onPressed: _isLoadingAi ? null : _clearNoteInput,
-                        style: TextButton.styleFrom(
-                          visualDensity: VisualDensity.compact,
-                          foregroundColor: const Color(0xFF64748B),
-                        ),
-                        icon: const Icon(Icons.clear_all_rounded, size: 17),
-                        label: const Text(
-                          'Bersihkan',
-                          style: TextStyle(fontSize: 12.5),
-                        ),
-                      ),
-                      const Spacer(),
-                      if (_cartItems.isNotEmpty)
-                        TextButton.icon(
-                          onPressed: _isLoadingAi ? null : _clearAllCart,
-                          style: TextButton.styleFrom(
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: [
+                        OutlinedButton.icon(
+                          onPressed: _isLoadingAi ? null : _fillSampleText,
+                          style: OutlinedButton.styleFrom(
                             visualDensity: VisualDensity.compact,
-                            foregroundColor: Colors.redAccent,
+                            foregroundColor: const Color(0xFF047857),
+                            side: const BorderSide(color: Color(0xFF6EE7B7)),
                           ),
-                          icon: const Icon(
-                            Icons.remove_shopping_cart_outlined,
-                            size: 16,
-                          ),
+                          icon:
+                              const Icon(Icons.playlist_add_rounded, size: 17),
                           label: const Text(
-                            'Reset Keranjang',
+                            'Isi Contoh',
                             style: TextStyle(fontSize: 12),
                           ),
                         ),
-                    ],
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          onPressed: _isLoadingAi ? null : _pickAndScanReceipt,
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            foregroundColor: const Color(0xFFD97706),
+                            side: const BorderSide(color: Color(0xFFFCD34D)),
+                          ),
+                          icon: const Icon(Icons.document_scanner_rounded,
+                              size: 17),
+                          label: const Text(
+                            'Scan Bon',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        OutlinedButton.icon(
+                          onPressed: _isLoadingAi ? null : _openImportJsonDialog,
+                          style: OutlinedButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            foregroundColor: const Color(0xFF2563EB),
+                            side: const BorderSide(color: Color(0xFF93C5FD)),
+                          ),
+                          icon: const Icon(Icons.data_object_rounded, size: 17),
+                          label: const Text(
+                            'Impor JSON',
+                            style: TextStyle(
+                                fontSize: 12, fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        TextButton.icon(
+                          onPressed: _isLoadingAi ? null : _clearNoteInput,
+                          style: TextButton.styleFrom(
+                            visualDensity: VisualDensity.compact,
+                            foregroundColor: const Color(0xFF64748B),
+                          ),
+                          icon: const Icon(Icons.clear_all_rounded, size: 17),
+                          label: const Text(
+                            'Bersihkan',
+                            style: TextStyle(fontSize: 12),
+                          ),
+                        ),
+                        if (_cartItems.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          TextButton.icon(
+                            onPressed: _isLoadingAi ? null : _clearAllCart,
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              foregroundColor: Colors.redAccent,
+                            ),
+                            icon: const Icon(
+                              Icons.remove_shopping_cart_outlined,
+                              size: 16,
+                            ),
+                            label: const Text(
+                              'Reset Keranjang',
+                              style: TextStyle(fontSize: 12),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 8),
                   FilledButton.icon(
