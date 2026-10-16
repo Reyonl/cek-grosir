@@ -26,10 +26,21 @@ class EditPriceDialog extends StatefulWidget {
 }
 
 class _EditPriceDialogState extends State<EditPriceDialog> {
+  late final TextEditingController _nameController;
   late final TextEditingController _priceController;
   late final TextEditingController _qtyController;
   late final TextEditingController _satuanController;
+  late String _selectedCategory;
   String? _errorText;
+
+  static const List<String> _categories = [
+    'Minuman Sachet',
+    'Minuman Dus & Botol',
+    'Sembako & Bumbu',
+    'Rokok & Korek',
+    'Sabun & Kebersihan',
+    'Lainnya',
+  ];
 
   static const List<String> _commonUnits = [
     'Renteng',
@@ -39,6 +50,9 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
     'Pak',
     'Kg',
     'Botol',
+    'Bal',
+    'Sak',
+    'Pcs',
   ];
 
   final NumberFormat _currencyFormat = NumberFormat.currency(
@@ -50,6 +64,9 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
   @override
   void initState() {
     super.initState();
+    _nameController = TextEditingController(
+      text: widget.item.namaProdukStandar,
+    );
     _priceController = TextEditingController(
       text: widget.item.hargaSatuanMax.toString(),
     );
@@ -59,10 +76,14 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
     _satuanController = TextEditingController(
       text: widget.item.satuan,
     );
+    _selectedCategory = _categories.contains(widget.item.kategori)
+        ? widget.item.kategori
+        : 'Lainnya';
   }
 
   @override
   void dispose() {
+    _nameController.dispose();
     _priceController.dispose();
     _qtyController.dispose();
     _satuanController.dispose();
@@ -81,6 +102,9 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
       return;
     }
 
+    final newName = _nameController.text.trim().isEmpty
+        ? widget.item.namaProdukStandar
+        : _nameController.text.trim();
     final parsedQty =
         (int.tryParse(_qtyController.text.trim()) ?? widget.item.qty)
             .clamp(1, 9999);
@@ -89,6 +113,8 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
         : _satuanController.text.trim();
 
     final updated = widget.item.copyWith(
+      namaProdukStandar: newName,
+      kategori: _selectedCategory,
       hargaSatuanMin: parsedPrice,
       hargaSatuanMax: parsedPrice,
       qty: parsedQty,
@@ -123,34 +149,36 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
 
     return AlertDialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+      titlePadding: const EdgeInsets.fromLTRB(20, 18, 20, 8),
       contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-      title: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      title: Row(
         children: [
-          Row(
-            children: [
-              Icon(
-                Icons.storefront_rounded,
-                color: theme.colorScheme.primary,
-                size: 22,
-              ),
-              const SizedBox(width: 8),
-              const Expanded(
-                child: Text(
-                  'Koreksi Harga Toko Langganan',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            widget.item.namaProdukStandar,
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: const Color(0xFFD1FAE5),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              Icons.edit_note_rounded,
               color: theme.colorScheme.primary,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Koreksi Produk & Harga',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
+                ),
+                Text(
+                  'Ubah nama hasil AI atau simpan harga toko langganan',
+                  style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                ),
+              ],
             ),
           ),
         ],
@@ -170,14 +198,14 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
               child: Row(
                 children: [
                   const Icon(
-                    Icons.info_outline,
+                    Icons.auto_awesome_rounded,
                     size: 16,
-                    color: Colors.black54,
+                    color: Color(0xFFD97706),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Acuan AI: $aiRangeText / ${widget.item.satuan}',
+                      'Taksiran AI: $aiRangeText / ${widget.item.satuan}',
                       style: const TextStyle(
                         fontSize: 12,
                         color: Colors.black87,
@@ -187,20 +215,36 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
                 ],
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
             TextField(
-              controller: _priceController,
-              autofocus: true,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              controller: _nameController,
               decoration: InputDecoration(
-                labelText: 'Harga Pasti di Grosir (Rp)',
-                hintText: 'Contoh: 16000',
-                prefixText: 'Rp ',
-                errorText: _errorText,
+                labelText: 'Nama Produk (Bisa Diedit)',
+                hintText: 'Contoh: Kopi Liong Bulan',
+                prefixIcon: const Icon(Icons.shopping_bag_outlined, size: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: _priceController,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: InputDecoration(
+                labelText: 'Harga Pasti di Toko Langganan (Rp)',
+                hintText: 'Contoh: 16000',
+                prefixText: 'Rp ',
+                errorText: _errorText,
+                prefixIcon: const Icon(Icons.payments_outlined, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
               ),
               onSubmitted: (_) => _handleSave(),
             ),
@@ -218,6 +262,8 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
                     ),
                   ),
                 ),
@@ -231,6 +277,8 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
                       ),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 12),
                     ),
                   ),
                 ),
@@ -256,10 +304,38 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
                 );
               }).toList(),
             ),
+            const SizedBox(height: 12),
+            const Text(
+              'Kategori Produk:',
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF475569),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: _categories.map((cat) {
+                final selected = _selectedCategory == cat;
+                return ChoiceChip(
+                  label: Text(cat, style: const TextStyle(fontSize: 11)),
+                  selected: selected,
+                  selectedColor: const Color(0xFFD1FAE5),
+                  visualDensity: VisualDensity.compact,
+                  onSelected: (_) {
+                    setState(() {
+                      _selectedCategory = cat;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
             const SizedBox(height: 10),
             const Text(
-              'Harga ini akan otomatis disimpan ke Memori Lokal (Hive) untuk belanja minggu depan.',
-              style: TextStyle(fontSize: 11.5, color: Colors.black54),
+              'Nama & harga ini akan otomatis disimpan ke Memori Lokal (Hive) agar belanja berikutnya memakai data pasti ini.',
+              style: TextStyle(fontSize: 11, color: Colors.black54),
             ),
             if (widget.item.isCustomPrice) ...[
               const SizedBox(height: 10),
@@ -291,7 +367,7 @@ class _EditPriceDialogState extends State<EditPriceDialog> {
         FilledButton.icon(
           onPressed: _handleSave,
           icon: const Icon(Icons.check_circle_outline, size: 18),
-          label: const Text('Simpan Harga Langganan'),
+          label: const Text('Simpan Perubahan'),
         ),
       ],
     );

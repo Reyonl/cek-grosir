@@ -10,6 +10,7 @@ import '../widgets/api_key_dialog.dart';
 import '../widgets/edit_price_dialog.dart';
 import '../widgets/item_card.dart';
 import '../widgets/receipt_scan_dialog.dart';
+import '../widgets/price_memory_manager_sheet.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -557,6 +558,8 @@ panther 1Ds''';
           }
           if (cartItem.normalizedKey == updated.normalizedKey) {
             return cartItem.copyWith(
+              namaProdukStandar: updated.namaProdukStandar,
+              kategori: updated.kategori,
               hargaSatuanMin: updated.hargaSatuanMax,
               hargaSatuanMax: updated.hargaSatuanMax,
               satuan: updated.satuan,
@@ -632,200 +635,13 @@ panther 1Ds''';
       builder: (context) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.75,
-          minChildSize: 0.45,
-          maxChildSize: 0.92,
+          initialChildSize: 0.85,
+          minChildSize: 0.50,
+          maxChildSize: 0.95,
           builder: (context, scrollController) {
-            return ValueListenableBuilder<Box>(
-              valueListenable: LocalStorageService.priceBoxListenable,
-              builder: (context, box, _) {
-                final savedPrices = LocalStorageService.getAllSavedPrices();
-                final entries = savedPrices.entries.toList()
-                  ..sort((a, b) => (a.value['nama'] ?? '')
-                      .toString()
-                      .compareTo((b.value['nama'] ?? '').toString()));
-
-                return Column(
-                  children: [
-                    Container(
-                      margin: const EdgeInsets.only(top: 10, bottom: 6),
-                      width: 42,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade300,
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(18, 6, 12, 8),
-                      child: Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFD1FAE5),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.storage_rounded,
-                              color: Color(0xFF065F46),
-                              size: 20,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Database Harga Langganan (Hive)',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                Text(
-                                  '${entries.length} produk tersimpan di memori lokal',
-                                  style: const TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          TextButton.icon(
-                            onPressed: () async {
-                              await LocalStorageService.seedInitialPrices();
-                              _loadCartFromHive();
-                            },
-                            icon: const Icon(Icons.restore_rounded, size: 16),
-                            label: const Text(
-                              'Reset Default',
-                              style: TextStyle(fontSize: 12),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Divider(height: 1),
-                    Expanded(
-                      child: entries.isEmpty
-                          ? const Center(
-                              child: Padding(
-                                padding: EdgeInsets.all(24),
-                                child: Text(
-                                  'Belum ada harga langganan tersimpan.\nKlik harga pada daftar belanja untuk menyimpan harga toko langganan.',
-                                  textAlign: TextAlign.center,
-                                  style: TextStyle(color: Colors.black54),
-                                ),
-                              ),
-                            )
-                          : ListView.separated(
-                              controller: scrollController,
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 16,
-                                vertical: 10,
-                              ),
-                              itemCount: entries.length,
-                              separatorBuilder: (_, __) =>
-                                  const Divider(height: 1),
-                              itemBuilder: (context, index) {
-                                final entry = entries[index];
-                                final key = entry.key;
-                                final data = entry.value;
-                                final nama =
-                                    (data['nama'] ?? key).toString();
-                                final kategori =
-                                    (data['kategori'] ?? 'Lainnya').toString();
-                                final satuan =
-                                    (data['satuan'] ?? 'Pcs').toString();
-                                final harga = data['harga'] is int
-                                    ? data['harga'] as int
-                                    : int.tryParse(
-                                            data['harga']?.toString() ?? '0') ??
-                                        0;
-
-                                return ListTile(
-                                  contentPadding: const EdgeInsets.symmetric(
-                                    horizontal: 4,
-                                    vertical: 2,
-                                  ),
-                                  title: Text(
-                                    nama,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w700,
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    '$kategori • Key: $key',
-                                    style: const TextStyle(
-                                      fontSize: 11.5,
-                                      color: Colors.black54,
-                                    ),
-                                  ),
-                                  trailing: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 5,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFECFDF5),
-                                          borderRadius:
-                                              BorderRadius.circular(8),
-                                          border: Border.all(
-                                            color: const Color(0xFFA7F3D0),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          '${_rpFormat.format(harga)} / $satuan',
-                                          style: const TextStyle(
-                                            fontWeight: FontWeight.w800,
-                                            fontSize: 12.5,
-                                            color: Color(0xFF065F46),
-                                          ),
-                                        ),
-                                      ),
-                                      IconButton(
-                                        tooltip: 'Hapus dari memori',
-                                        icon: const Icon(
-                                          Icons.delete_outline_rounded,
-                                          color: Colors.redAccent,
-                                          size: 20,
-                                        ),
-                                        onPressed: () async {
-                                          await LocalStorageService
-                                              .deleteCustomPrice(key);
-                                          setState(() {
-                                            _cartItems =
-                                                _cartItems.map((item) {
-                                              if (item.normalizedKey == key) {
-                                                return item.copyWith(
-                                                  hargaSatuanMin:
-                                                      item.aiHargaMinOriginal,
-                                                  hargaSatuanMax:
-                                                      item.aiHargaMaxOriginal,
-                                                  isCustomPrice: false,
-                                                );
-                                              }
-                                              return item;
-                                            }).toList();
-                                          });
-                                          await _persistCart();
-                                        },
-                                      ),
-                                    ],
-                                  ),
-                                );
-                              },
-                            ),
-                    ),
-                  ],
-                );
+            return PriceMemoryManagerSheet(
+              onDataChanged: () {
+                _loadCartFromHive();
               },
             );
           },

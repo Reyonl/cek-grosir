@@ -204,10 +204,16 @@ class LocalStorageService {
       return item;
     }
 
+    final String savedNama = (saved['nama'] ?? '').toString().trim();
+    final String savedKategori = (saved['kategori'] ?? '').toString().trim();
     final String savedSatuan =
         (saved['satuan'] ?? item.satuan).toString().trim();
 
     return item.copyWith(
+      namaProdukStandar:
+          savedNama.isNotEmpty ? savedNama : item.namaProdukStandar,
+      kategori:
+          savedKategori.isNotEmpty ? savedKategori : item.kategori,
       hargaSatuanMin: hargaLangganan,
       hargaSatuanMax: hargaLangganan,
       satuan: savedSatuan.isNotEmpty ? savedSatuan : item.satuan,
