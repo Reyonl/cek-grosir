@@ -22,6 +22,7 @@ class ReceiptScanResult {
         final itemData = rawItems[i];
         if (itemData is Map) {
           final map = Map<String, dynamic>.from(itemData);
+          map['id'] = '${DateTime.now().microsecondsSinceEpoch}_${i}_${map['normalized_key'] ?? ''}';
           map['is_custom_price'] = true; // Bon fisik adalah harga pasti riil
           parsedItems.add(GroceryItem.fromJson(map));
         }

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:image_picker/image_picker.dart';
@@ -260,15 +261,40 @@ panther 1Ds''';
   }
 
   Future<void> _pickAndScanReceipt() async {
-    final ImagePicker picker = ImagePicker();
+    final apiKey = LocalStorageService.getApiKey();
+    if (apiKey.isEmpty) {
+      final action = await _showMissingApiKeySheet();
+      if (action == 'input_key') {
+        if (!mounted) return;
+        final saved = await showDialog<bool>(
+          context: context,
+          builder: (_) => const ApiKeyDialog(),
+        );
+        if (saved != true || LocalStorageService.getApiKey().isEmpty) {
+          return;
+        }
+      } else if (action == 'offline') {
+        final sample = AiService.getSampleReceiptResult();
+        await _displayScanResultDialog(sample);
+        return;
+      } else {
+        return;
+      }
+    }
 
-    final source = await showModalBottomSheet<String>(
+    final isMobile = !kIsWeb &&
+        (defaultTargetPlatform == TargetPlatform.android ||
+            defaultTargetPlatform == TargetPlatform.iOS);
+
+    if (!mounted) return;
+
+    showModalBottomSheet<void>(
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 14),
@@ -306,24 +332,28 @@ panther 1Ds''';
                   style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
                 ),
                 const SizedBox(height: 14),
-                ListTile(
-                  leading: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1FAE5),
-                      borderRadius: BorderRadius.circular(10),
+                if (isMobile)
+                  ListTile(
+                    leading: Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1FAE5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: const Icon(Icons.camera_alt_rounded,
+                          color: Color(0xFF047857)),
                     ),
-                    child: const Icon(Icons.camera_alt_rounded,
-                        color: Color(0xFF047857)),
+                    title: const Text('Foto Bon dengan Kamera',
+                        style: TextStyle(
+                            fontWeight: FontWeight.w700, fontSize: 14)),
+                    subtitle: const Text(
+                        'Ambil foto langsung nota/bon fisik di depan Anda',
+                        style: TextStyle(fontSize: 12)),
+                    onTap: () {
+                      Navigator.of(sheetContext).pop();
+                      _pickImageFile(ImageSource.camera);
+                    },
                   ),
-                  title: const Text('Foto Bon dengan Kamera',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                  subtitle: const Text(
-                      'Ambil foto langsung nota/bon fisik di depan Anda',
-                      style: TextStyle(fontSize: 12)),
-                  onTap: () => Navigator.of(context).pop('camera'),
-                ),
                 ListTile(
                   leading: Container(
                     padding: const EdgeInsets.all(8),
@@ -334,13 +364,22 @@ panther 1Ds''';
                     child: const Icon(Icons.photo_library_rounded,
                         color: Color(0xFFB45309)),
                   ),
-                  title: const Text('Pilih dari Galeri Foto',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
-                  subtitle: const Text(
-                      'Gunakan foto bon yang tersimpan di HP',
-                      style: TextStyle(fontSize: 12)),
-                  onTap: () => Navigator.of(context).pop('gallery'),
+                  title: Text(
+                      isMobile
+                          ? 'Pilih dari Galeri Foto'
+                          : 'Pilih File Foto Bon (JPG, PNG)',
+                      style: const TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
+                  subtitle: Text(
+                      isMobile
+                          ? 'Gunakan foto bon yang tersimpan di HP'
+                          : 'Pilih file gambar bon dari penyimpanan komputer/perangkat',
+                      style: const TextStyle(fontSize: 12)),
+                  onTap: () {
+                    // Trigger picker synchronously during user activation event
+                    _pickImageFile(ImageSource.gallery);
+                    Navigator.of(sheetContext).pop();
+                  },
                 ),
                 ListTile(
                   leading: Container(
@@ -353,12 +392,16 @@ panther 1Ds''';
                         color: Color(0xFF2563EB)),
                   ),
                   title: const Text('Coba Contoh Bon Grosir (Demo)',
-                      style:
-                          TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+                      style: TextStyle(
+                          fontWeight: FontWeight.w700, fontSize: 14)),
                   subtitle: const Text(
                       'Uji coba sistem pembelajaran memori toko secara instan',
                       style: TextStyle(fontSize: 12)),
-                  onTap: () => Navigator.of(context).pop('demo'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    final sample = AiService.getSampleReceiptResult();
+                    _displayScanResultDialog(sample);
+                  },
                 ),
               ],
             ),
@@ -366,54 +409,42 @@ panther 1Ds''';
         );
       },
     );
+  }
 
-    if (source == null || !mounted) return;
+  Future<void> _pickImageFile(ImageSource source) async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? file = await picker.pickImage(
+        source: source,
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 85,
+      );
 
-    if (source == 'demo') {
-      final sample = AiService.getSampleReceiptResult();
-      await _displayScanResultDialog(sample);
-      return;
-    }
+      if (file == null || !mounted) return;
 
-    final ImageSource imgSource =
-        source == 'camera' ? ImageSource.camera : ImageSource.gallery;
-
-    final XFile? file = await picker.pickImage(
-      source: imgSource,
-      maxWidth: 1600,
-      maxHeight: 1600,
-      imageQuality: 85,
-    );
-
-    if (file == null || !mounted) return;
-
-    final apiKey = LocalStorageService.getApiKey();
-    if (apiKey.isEmpty) {
-      final action = await _showMissingApiKeySheet();
-      if (action == 'input_key') {
-        if (!mounted) return;
-        final saved = await showDialog<bool>(
-          context: context,
-          builder: (_) => const ApiKeyDialog(),
-        );
-        if (saved != true || LocalStorageService.getApiKey().isEmpty) {
-          return;
-        }
-      } else if (action == 'offline') {
-        final sample = AiService.getSampleReceiptResult();
-        await _displayScanResultDialog(sample);
-        return;
-      } else {
-        return;
+      final bytes = await file.readAsBytes();
+      String mimeType = 'image/jpeg';
+      final lowerName = file.name.toLowerCase();
+      if (lowerName.endsWith('.png')) {
+        mimeType = 'image/png';
+      } else if (lowerName.endsWith('.webp')) {
+        mimeType = 'image/webp';
+      } else if (lowerName.endsWith('.heic') || lowerName.endsWith('.heif')) {
+        mimeType = 'image/heic';
       }
+
+      await _processReceiptBytes(bytes, mimeType);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          backgroundColor: Colors.red.shade800,
+          behavior: SnackBarBehavior.floating,
+          content: Text('Gagal memilih/membuka gambar: $e'),
+        ),
+      );
     }
-
-    final bytes = await file.readAsBytes();
-    final mimeType = file.name.toLowerCase().endsWith('.png')
-        ? 'image/png'
-        : 'image/jpeg';
-
-    await _processReceiptBytes(bytes, mimeType);
   }
 
   Future<void> _processReceiptBytes(dynamic bytes, String mimeType) async {
